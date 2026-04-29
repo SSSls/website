@@ -1,7 +1,28 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { supabase, BUCKET_NAME } from "./supabase";
+
+type Lesson = {
+  icon: string;
+  title: string;
+  desc: string;
+  tag: string;
+  image: string;
+  video: string;
+  videoId: string;
+  content: string[];
+};
+
+type ObservationForm = {
+  name: string;
+  date: string;
+  time: string;
+  place: string;
+};
+
+type Photo = ObservationForm & { img: string };
 
 function Icon({ name, className = "h-6 w-6" }: { name: string; className?: string }) {
   const common = {
@@ -16,6 +37,15 @@ function Icon({ name, className = "h-6 w-6" }: { name: string; className?: strin
   };
 
   const icons: Record<string, React.ReactNode> = {
+    telescope: (
+      <svg {...common}>
+        <path d="M4 14l9-5 2 3-9 5z" />
+        <path d="M13 9l3-2 3 5-3 2" />
+        <path d="M10 15l-2 6" />
+        <path d="M13 14l4 7" />
+        <path d="M11 16h4" />
+      </svg>
+    ),
     aperture: (
       <svg {...common}>
         <circle cx="12" cy="12" r="9" />
@@ -27,20 +57,11 @@ function Icon({ name, className = "h-6 w-6" }: { name: string; className?: strin
         <path d="M5.8 5.5l3.8 6.6" />
       </svg>
     ),
-    telescope: (
+    book: (
       <svg {...common}>
-        <path d="M4 14l9-5 2 3-9 5z" />
-        <path d="M13 9l3-2 3 5-3 2" />
-        <path d="M10 15l-2 6" />
-        <path d="M13 14l4 7" />
-        <path d="M11 16h4" />
-      </svg>
-    ),
-    waves: (
-      <svg {...common}>
-        <path d="M3 7c3 0 3-2 6-2s3 2 6 2 3-2 6-2" />
-        <path d="M3 13c3 0 3-2 6-2s3 2 6 2 3-2 6-2" />
-        <path d="M3 19c3 0 3-2 6-2s3 2 6 2 3-2 6-2" />
+        <path d="M4 5.5A2.5 2.5 0 016.5 3H20v16H6.5A2.5 2.5 0 004 21.5z" />
+        <path d="M4 5.5v16" />
+        <path d="M8 7h8" />
       </svg>
     ),
     orbit: (
@@ -50,31 +71,17 @@ function Icon({ name, className = "h-6 w-6" }: { name: string; className?: strin
         <ellipse cx="12" cy="12" rx="4" ry="10" transform="rotate(45 12 12)" />
       </svg>
     ),
-    book: (
+    waves: (
       <svg {...common}>
-        <path d="M4 5.5A2.5 2.5 0 016.5 3H20v16H6.5A2.5 2.5 0 004 21.5z" />
-        <path d="M4 5.5v16" />
-        <path d="M8 7h8" />
-      </svg>
-    ),
-    calendar: (
-      <svg {...common}>
-        <rect x="3" y="4" width="18" height="17" rx="2" />
-        <path d="M8 2v4" />
-        <path d="M16 2v4" />
-        <path d="M3 10h18" />
+        <path d="M3 7c3 0 3-2 6-2s3 2 6 2 3-2 6-2" />
+        <path d="M3 13c3 0 3-2 6-2s3 2 6 2 3-2 6-2" />
+        <path d="M3 19c3 0 3-2 6-2s3 2 6 2 3-2 6-2" />
       </svg>
     ),
     camera: (
       <svg {...common}>
         <path d="M4 8h4l2-3h4l2 3h4v11H4z" />
         <circle cx="12" cy="13.5" r="3.5" />
-      </svg>
-    ),
-    sparkles: (
-      <svg {...common}>
-        <path d="M12 3l1.6 5.1L19 10l-5.4 1.9L12 17l-1.6-5.1L5 10l5.4-1.9z" />
-        <path d="M19 16l.7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7z" />
       </svg>
     ),
     upload: (
@@ -84,13 +91,12 @@ function Icon({ name, className = "h-6 w-6" }: { name: string; className?: strin
         <path d="M4 16v4h16v-4" />
       </svg>
     ),
-    trash: (
+    calendar: (
       <svg {...common}>
-        <path d="M4 7h16" />
-        <path d="M10 11v6" />
-        <path d="M14 11v6" />
-        <path d="M6 7l1 14h10l1-14" />
-        <path d="M9 7V4h6v3" />
+        <rect x="3" y="4" width="18" height="17" rx="2" />
+        <path d="M8 2v4" />
+        <path d="M16 2v4" />
+        <path d="M3 10h18" />
       </svg>
     ),
     play: (
@@ -104,12 +110,27 @@ function Icon({ name, className = "h-6 w-6" }: { name: string; className?: strin
         <path d="M6 6l12 12" />
       </svg>
     ),
+    trash: (
+      <svg {...common}>
+        <path d="M4 7h16" />
+        <path d="M10 11v6" />
+        <path d="M14 11v6" />
+        <path d="M6 7l1 14h10l1-14" />
+        <path d="M9 7V4h6v3" />
+      </svg>
+    ),
+    sparkles: (
+      <svg {...common}>
+        <path d="M12 3l1.6 5.1L19 10l-5.4 1.9L12 17l-1.6-5.1L5 10l5.4-1.9z" />
+        <path d="M19 16l.7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7z" />
+      </svg>
+    ),
   };
 
   return icons[name] || icons.sparkles;
 }
 
-const lessons = [
+const lessons: Lesson[] = [
   {
     icon: "telescope",
     title: "Telescope Types: Refractor, Reflector, and Hybrid",
@@ -119,10 +140,10 @@ const lessons = [
     video: "https://www.youtube.com/watch?v=eQ3IP60Fj9c",
     videoId: "eQ3IP60Fj9c",
     content: [
-      "A telescope is a light-collecting instrument. The larger the aperture, the more light it can gather, which is especially important for faint deep-sky objects such as nebulae and galaxies.",
-      "Refractors use lenses to bend light into focus. They usually give sharp, high-contrast images and require little maintenance. The Seestar S50 belongs to this family because it uses an apochromatic triplet refractor optical design.",
-      "Reflectors use mirrors instead of lenses. They can provide larger apertures for lower cost, but often need collimation, meaning the mirrors must be aligned correctly.",
-      "Hybrid or catadioptric telescopes combine lenses and mirrors. They are compact and versatile, but can be more complex and expensive.",
+      "A telescope is a light-collecting instrument. Larger apertures gather more light and reveal fainter deep-sky objects.",
+      "Refractors use lenses to bend light into focus. They are sharp, low-maintenance, and similar in concept to the Seestar S50.",
+      "Reflectors use mirrors and can offer larger apertures at lower cost, but often require collimation.",
+      "Hybrid telescopes combine lenses and mirrors. They are compact and versatile, but can be more complex.",
     ],
   },
   {
@@ -134,10 +155,10 @@ const lessons = [
     video: "https://www.youtube.com/watch?v=eFyZGw3fo94",
     videoId: "eFyZGw3fo94",
     content: [
-      "Aperture is the diameter of the main lens or mirror. A larger aperture collects more photons and can reveal fainter objects.",
-      "Focal length controls magnification and image scale. A longer focal length makes objects appear larger but usually gives a narrower field of view.",
-      "The f-ratio is focal length divided by aperture. A smaller f-ratio is called a faster optical system because it gathers useful image signal more quickly for photography.",
-      "The Seestar S50 has a 50 mm aperture and 250 mm focal length, giving it an f/5 system. This makes it suitable for wide-field nebulae, star clusters, and beginner-friendly deep-sky imaging.",
+      "Aperture is the diameter of the main lens or mirror. Larger aperture means more collected photons.",
+      "Focal length controls image scale. Longer focal length usually gives a narrower field of view.",
+      "The f-ratio is focal length divided by aperture. Smaller f-ratio is faster for imaging.",
+      "The Seestar S50 has 50 mm aperture and 250 mm focal length, making it an f/5 system.",
     ],
   },
   {
@@ -149,11 +170,10 @@ const lessons = [
     video: "https://www.youtube.com/watch?v=jgH2fxSna0A",
     videoId: "jgH2fxSna0A",
     content: [
-      "First, place the telescope on stable ground. A shaky tripod will ruin both visual observation and long-exposure imaging.",
-      "Second, level or align the mount. Simple Alt-Az mounts need leveling, while equatorial mounts need polar alignment.",
-      "Third, choose a target. Bright objects like the Moon and planets are easier. Nebulae and galaxies usually need longer exposure and stacking.",
-      "Fourth, focus carefully. Even a small focus error can make stars look soft or bloated. For imaging, refocus if temperature changes significantly.",
-      "Important: never point any telescope at the Sun unless a certified solar filter is installed before the telescope is aimed at the Sun.",
+      "Place the telescope on stable ground. A shaky tripod ruins both visual observing and imaging.",
+      "Level or align the mount. Alt-Az mounts need leveling, while equatorial mounts need polar alignment.",
+      "Choose a target. The Moon and planets are easier; nebulae and galaxies need more exposure and stacking.",
+      "Never point any telescope at the Sun unless a certified solar filter is installed first.",
     ],
   },
   {
@@ -165,11 +185,10 @@ const lessons = [
     video: "https://www.youtube.com/watch?v=XCotRiUIWtg",
     videoId: "XCotRiUIWtg",
     content: [
-      "The Seestar S50 combines telescope, camera, mount, focuser, filter wheel, battery, storage, and controller into one compact device.",
-      "Basic setup is simple: charge the device, place it on a stable surface, extend the tripod legs, connect through the Seestar app, and use the in-app level tool. Good leveling improves GoTo accuracy and tracking.",
-      "In Stargazing mode, you can select a target from the app database or sky atlas. The telescope slews automatically, plate-solves the sky, focuses, tracks the object, and begins imaging.",
-      "The Seestar commonly captures short sub-exposures, such as 10 seconds in Alt-Az mode, and stacks them live. The image improves gradually as more frames are added.",
-      "Images and FITS files are saved internally. You can retrieve data through the app or connect the telescope to a computer with USB-C.",
+      "The Seestar S50 combines telescope, camera, mount, focuser, filter wheel, battery, storage, and controller.",
+      "Set it on stable ground, connect with the app, and use the in-app level tool before observing.",
+      "In Stargazing mode it slews, plate-solves, focuses, tracks, and starts imaging automatically.",
+      "It captures short sub-exposures and stacks them live so the image improves over time.",
     ],
   },
   {
@@ -181,10 +200,10 @@ const lessons = [
     video: "https://www.youtube.com/watch?v=j_XPirkAnAM",
     videoId: "j_XPirkAnAM",
     content: [
-      "The UV/IR cut filter blocks ultraviolet and infrared light while passing visible light. It is the default choice for broadband targets such as galaxies, star clusters, reflection nebulae, the Moon, and natural-color images.",
-      "The dual narrowband filter passes important emission lines such as Hydrogen-alpha and Oxygen-III. This is useful for emission nebulae, especially under light-polluted urban skies.",
-      "Narrowband filters block much of the unwanted city light, improving contrast. The trade-off is that less total light reaches the camera, so longer total integration time is usually needed.",
-      "The solar filter is a physical safety filter and must be attached before observing the Sun. The dark filter is internal and is used for automatic dark-frame calibration.",
+      "UV/IR cut is useful for broadband targets like galaxies, clusters, reflection nebulae, and natural-color imaging.",
+      "Dual narrowband H-alpha and OIII filters help emission nebulae under city light pollution.",
+      "Narrowband increases contrast but usually requires longer total integration time.",
+      "The solar filter must be attached before observing the Sun. The dark filter helps calibration.",
     ],
   },
   {
@@ -196,16 +215,15 @@ const lessons = [
     video: "https://www.youtube.com/watch?v=r-POAeIgU3E",
     videoId: "r-POAeIgU3E",
     content: [
-      "Image stacking combines many short exposures into one cleaner image. Real signal from the target adds consistently, while random noise averages out.",
-      "Longer total integration time usually means smoother background and more faint detail. For example, a nebula may look weak after one minute but much clearer after thirty minutes or more.",
-      "Calibration frames correct sensor and optical imperfections. Dark frames remove thermal noise and hot pixels, while flat frames correct vignetting and dust shadows.",
-      "For Seestar users, dark and flat correction are handled automatically in many workflows. When using external software, avoid applying calibration twice unless you know the files are truly uncalibrated.",
-      "In Alt-Az mode, long sessions can show field rotation. EQ mode reduces field rotation and is better for longer integrations, but requires more careful setup.",
+      "Stacking combines many short exposures into a cleaner image.",
+      "Real signal adds consistently while random noise averages out.",
+      "Calibration frames help correct sensor and optical imperfections.",
+      "Alt-Az mode may show field rotation in long sessions; EQ mode is better for longer integrations.",
     ],
   },
 ];
 
-const samplePhotos = [
+const samplePhotos: Photo[] = [
   {
     name: "M 42 — Orion Nebula",
     date: "2026-04-09",
@@ -229,9 +247,7 @@ const samplePhotos = [
   },
 ];
 
-type ObservationForm = { name: string; date: string; time: string; place: string };
-
-function normalizeObservation(form: ObservationForm, preview: string, fallbackDate: string) {
+function normalizeObservation(form: ObservationForm, preview: string, fallbackDate: string): Photo {
   return {
     name: form.name.trim(),
     date: form.date || fallbackDate,
@@ -249,47 +265,72 @@ function getYoutubeThumbnail(videoId: string) {
   return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
 }
 
-function runSelfTests() {
-  const fallbackDate = "2026-04-22";
-  const blank = { name: "", date: "", time: "", place: "" };
-  const filled = { name: "  M 42  ", date: "", time: " 10 min ", place: " 114°E, 22°N " };
-
-  console.assert(canSaveObservation(blank, "data:image/png;base64,test") === false, "A target name is required before saving.");
-  console.assert(canSaveObservation(filled, "") === false, "An uploaded image is required before saving.");
-  console.assert(canSaveObservation(filled, "data:image/png;base64,test") === true, "A valid observation should be saveable.");
-
-  const normalized = normalizeObservation(filled, "data:image/png;base64,test", fallbackDate);
-  console.assert(normalized.name === "M 42", "Target names should be trimmed.");
-  console.assert(normalized.date === fallbackDate, "Empty dates should fall back to today's date.");
-  console.assert(normalized.time === "10 min", "Exposure time should be trimmed.");
-  console.assert(normalized.place === "114°E, 22°N", "Location should be trimmed.");
-  console.assert(lessons.length === 6, "There should be six core learning modules.");
-  console.assert(lessons.every((lesson) => lesson.image && lesson.video && lesson.videoId && lesson.content.length >= 4), "Every lesson should include an image, YouTube link, videoId, and detailed content.");
-  console.assert(getYoutubeThumbnail("abc123").includes("abc123"), "YouTube thumbnail helper should include the video ID.");
-}
-
-runSelfTests();
-
 export default function App() {
-  const [photos, setPhotos] = useState(samplePhotos);
+  const [cloudImages, setCloudImages] = useState<string[]>([]);
+  const [photos, setPhotos] = useState<Photo[]>(samplePhotos);
   const [form, setForm] = useState<ObservationForm>({ name: "", date: "", time: "", place: "" });
   const [preview, setPreview] = useState("");
-  const [selectedLesson, setSelectedLesson] = useState<(typeof lessons)[number] | null>(null);
+  const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const canSave = canSaveObservation(form, preview);
 
-  function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
+  async function loadImages() {
+    const { data, error } = await supabase.storage
+      .from(BUCKET_NAME)
+      .list("", {
+        limit: 100,
+        offset: 0,
+        sortBy: { column: "created_at", order: "desc" },
+      });
+
+    if (error) {
+      console.error("Load images error:", error);
+      return;
+    }
+
+    const urls = (data || [])
+      .filter((file) => file.name && !file.name.startsWith("."))
+      .map((file) => supabase.storage.from(BUCKET_NAME).getPublicUrl(file.name).data.publicUrl);
+
+    setCloudImages(urls);
+  }
+
+  useEffect(() => {
+    loadImages();
+  }, []);
+
+  async function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setPreview(String(reader.result));
-    reader.onerror = () => setPreview("");
-    reader.readAsDataURL(file);
+
+    setIsUploading(true);
+
+    try {
+      const fileExt = file.name.split(".").pop() || "jpg";
+      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
+
+      const { error } = await supabase.storage.from(BUCKET_NAME).upload(fileName, file);
+
+      if (error) {
+        console.error("Upload error:", error);
+        alert("Upload failed. Please check Supabase Storage permissions and bucket name.");
+        return;
+      }
+
+      const publicUrl = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName).data.publicUrl;
+      setPreview(publicUrl);
+      await loadImages();
+    } finally {
+      setIsUploading(false);
+    }
   }
 
   function addPhoto(event: React.FormEvent) {
     event.preventDefault();
     if (!canSave) return;
+
     setPhotos([normalizeObservation(form, preview, today), ...photos]);
     setForm({ name: "", date: "", time: "", place: "" });
     setPreview("");
@@ -333,12 +374,8 @@ export default function App() {
               Learn telescope basics, Seestar S50 operation, filters, stacking, and safety precautions. Then upload your own observation photos and build a personal night-sky archive.
             </p>
             <div className="mt-9 flex flex-wrap gap-4">
-              <a href="#upload">
-                <Button className="rounded-2xl bg-blue-500 px-7 py-6 text-base text-white hover:bg-blue-400">Add your photo</Button>
-              </a>
-              <a href="#learn">
-                <Button variant="outline" className="rounded-2xl border-white/35 bg-white/10 px-7 py-6 text-base text-white hover:bg-white/20">Open lessons</Button>
-              </a>
+              <a href="#upload"><Button className="rounded-2xl bg-blue-500 px-7 py-6 text-base text-white hover:bg-blue-400">Add your photo</Button></a>
+              <a href="#learn"><Button variant="outline" className="rounded-2xl border-white/35 bg-white/10 px-7 py-6 text-base text-white hover:bg-white/20">Open lessons</Button></a>
             </div>
           </motion.div>
 
@@ -365,14 +402,10 @@ export default function App() {
         <section id="learn" className="mx-auto max-w-7xl px-6 py-20">
           <div className="mb-10 flex items-end justify-between gap-6">
             <div>
-              <p className="mb-3 flex items-center gap-2 text-blue-100">
-                <Icon name="book" className="h-5 w-5" /> Clickable learning modules
-              </p>
+              <p className="mb-3 flex items-center gap-2 text-blue-100"><Icon name="book" className="h-5 w-5" /> Clickable learning modules</p>
               <h2 className="text-4xl font-light text-white md:text-5xl">Learn before you observe</h2>
             </div>
-            <p className="hidden max-w-md text-slate-100 md:block">
-              Click any card to open a detailed lesson with an image and a YouTube tutorial link.
-            </p>
+            <p className="hidden max-w-md text-slate-100 md:block">Click any card to open a detailed lesson with an image and a YouTube tutorial link.</p>
           </div>
 
           <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -402,9 +435,7 @@ export default function App() {
                     <div className="p-6">
                       <h3 className="text-2xl font-medium text-white">{lesson.title}</h3>
                       <p className="mt-3 leading-7 text-slate-100">{lesson.desc}</p>
-                      <p className="mt-5 inline-flex items-center gap-2 text-sm text-blue-100">
-                        Open lesson <Icon name="play" className="h-4 w-4" />
-                      </p>
+                      <p className="mt-5 inline-flex items-center gap-2 text-sm text-blue-100">Open lesson <Icon name="play" className="h-4 w-4" /></p>
                     </div>
                   </CardContent>
                 </Card>
@@ -415,13 +446,9 @@ export default function App() {
 
         <section id="upload" className="mx-auto grid max-w-7xl gap-8 px-6 py-20 lg:grid-cols-[.9fr_1.1fr]">
           <div>
-            <p className="mb-3 flex items-center gap-2 text-blue-100">
-              <Icon name="upload" className="h-5 w-5" /> Personal observation
-            </p>
+            <p className="mb-3 flex items-center gap-2 text-blue-100"><Icon name="upload" className="h-5 w-5" /> Personal observation</p>
             <h2 className="text-4xl font-light text-white md:text-5xl">Add your own observation photo</h2>
-            <p className="mt-5 max-w-lg leading-8 text-slate-100">
-              Upload a sky image, name the target, and add the date, location, and exposure or stacking time. The card will appear instantly in your gallery.
-            </p>
+            <p className="mt-5 max-w-lg leading-8 text-slate-100">Upload a sky image, name the target, and add the date, location, and exposure or stacking time. The image is uploaded to Supabase Storage and appears in the cloud gallery.</p>
           </div>
 
           <Card className="rounded-[2rem] border-white/15 bg-white/[0.1] backdrop-blur-xl">
@@ -433,11 +460,11 @@ export default function App() {
                   ) : (
                     <div className="p-8 text-white">
                       <Icon name="camera" className="mx-auto mb-4 h-10 w-10 text-blue-100" />
-                      <p className="text-lg font-medium text-white">Click to upload an observation photo</p>
+                      <p className="text-lg font-medium text-white">{isUploading ? "Uploading..." : "Click to upload an observation photo"}</p>
                       <p className="mt-2 text-sm text-slate-100">JPG, PNG, or exported telescope image</p>
                     </div>
                   )}
-                  <input type="file" accept="image/*" onChange={handleUpload} className="hidden" />
+                  <input type="file" accept="image/*" onChange={handleUpload} className="hidden" disabled={isUploading} />
                 </label>
 
                 <div className="grid gap-4 md:grid-cols-2">
@@ -446,12 +473,8 @@ export default function App() {
                   <input className="rounded-2xl border border-white/20 bg-black/35 px-4 py-3 text-white placeholder:text-slate-200 outline-none focus:border-blue-200" placeholder="Exposure / stack time" value={form.time} onChange={(event) => setForm({ ...form, time: event.target.value })} />
                   <input className="rounded-2xl border border-white/20 bg-black/35 px-4 py-3 text-white placeholder:text-slate-200 outline-none focus:border-blue-200" placeholder="Location" value={form.place} onChange={(event) => setForm({ ...form, place: event.target.value })} />
                 </div>
-                <p className="text-sm leading-6 text-slate-100">
-                  Required: image and target name. Optional: date, location, and exposure time. If no date is selected, today will be used automatically.
-                </p>
-                <Button type="submit" disabled={!canSave} className="rounded-2xl bg-blue-500 py-6 text-base text-white hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-50">
-                  Save observation
-                </Button>
+                <p className="text-sm leading-6 text-slate-100">Required: image and target name. Optional: date, location, and exposure time. If no date is selected, today will be used automatically.</p>
+                <Button type="submit" disabled={!canSave} className="rounded-2xl bg-blue-500 py-6 text-base text-white hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-50">Save observation</Button>
               </form>
             </CardContent>
           </Card>
@@ -460,12 +483,10 @@ export default function App() {
         <section id="gallery" className="mx-auto max-w-7xl px-6 py-20">
           <div className="mb-10 flex items-end justify-between gap-6">
             <div>
-              <p className="mb-3 flex items-center gap-2 text-blue-100">
-                <Icon name="calendar" className="h-5 w-5" /> Observation gallery
-              </p>
+              <p className="mb-3 flex items-center gap-2 text-blue-100"><Icon name="calendar" className="h-5 w-5" /> Observation gallery</p>
               <h2 className="text-4xl font-light text-white md:text-5xl">Your night-sky archive</h2>
             </div>
-            <p className="text-slate-100">{photos.length} observations</p>
+            <p className="text-slate-100">{photos.length} saved observations</p>
           </div>
 
           <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -492,6 +513,27 @@ export default function App() {
               </motion.div>
             ))}
           </div>
+
+          <div className="mt-14">
+            <h3 className="mb-3 text-3xl font-light text-white">Uploaded Cloud Photos</h3>
+            <p className="mb-6 text-sm leading-6 text-slate-100">These images are loaded from your Supabase Storage bucket. They stay visible after refresh and can be seen by anyone if your bucket is public.</p>
+
+            {cloudImages.length === 0 ? (
+              <Card className="rounded-[2rem] border-white/10 bg-white/[0.08] backdrop-blur-xl">
+                <CardContent className="p-8 text-slate-100">No cloud photos found yet. Upload a photo above, then refresh to test persistence.</CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+                {cloudImages.map((url) => (
+                  <Card key={url} className="overflow-hidden rounded-[2rem] border-white/10 bg-white/[0.08] backdrop-blur-xl">
+                    <CardContent className="p-0">
+                      <img src={url} alt="Uploaded observation" className="h-80 w-full object-cover" />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
         </section>
       </main>
 
@@ -510,9 +552,7 @@ export default function App() {
                 <Icon name="close" className="h-5 w-5" />
               </button>
               <div className="absolute bottom-6 left-6 right-6">
-                <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-blue-500/25 px-4 py-2 text-sm text-blue-100 backdrop-blur">
-                  <Icon name={selectedLesson.icon} className="h-4 w-4" /> {selectedLesson.tag}
-                </p>
+                <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-blue-500/25 px-4 py-2 text-sm text-blue-100 backdrop-blur"><Icon name={selectedLesson.icon} className="h-4 w-4" /> {selectedLesson.tag}</p>
                 <h2 className="text-3xl font-light text-white md:text-5xl">{selectedLesson.title}</h2>
               </div>
             </div>
@@ -528,20 +568,14 @@ export default function App() {
               </div>
 
               <div>
-                <h3 className="mb-4 flex items-center gap-2 text-2xl font-medium text-white">
-                  <Icon name="play" className="h-5 w-5" /> Video tutorial
-                </h3>
+                <h3 className="mb-4 flex items-center gap-2 text-2xl font-medium text-white"><Icon name="play" className="h-5 w-5" /> Video tutorial</h3>
                 <a href={selectedLesson.video} target="_blank" rel="noopener noreferrer" className="block group">
                   <div className="relative aspect-video overflow-hidden rounded-2xl border border-white/15 bg-black">
                     <img src={getYoutubeThumbnail(selectedLesson.videoId)} alt={`${selectedLesson.title} YouTube thumbnail`} className="h-full w-full object-cover" />
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/45 text-5xl text-white transition group-hover:bg-black/25">
-                      ▶
-                    </div>
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/45 text-5xl text-white transition group-hover:bg-black/25">▶</div>
                   </div>
                 </a>
-                <p className="mt-4 text-sm leading-6 text-slate-100">
-                  Click the video card to open the tutorial on YouTube in a new tab. This avoids embedded-player loading problems in restricted preview environments.
-                </p>
+                <p className="mt-4 text-sm leading-6 text-slate-100">Click the video card to open the tutorial on YouTube in a new tab. This avoids embedded-player loading problems in restricted preview environments.</p>
               </div>
             </div>
           </motion.div>
