@@ -388,8 +388,17 @@ export default function App() {
     setPreview("");
   }
 
-  function removePhoto(index: number) {
-    setPhotos(photos.filter((_, i) => i !== index));
+  function removePhotoByUrl(imageUrl: string) {
+    const nextLocalArchive = readLocalArchive().filter((photo) => photo.img !== imageUrl);
+    writeLocalArchive(nextLocalArchive);
+
+    setPhotos((currentPhotos) =>
+      currentPhotos.filter((photo) => photo.img !== imageUrl || samplePhotos.some((sample) => sample.img === photo.img))
+    );
+  }
+
+  function isLocalArchivePhoto(imageUrl: string) {
+    return readLocalArchive().some((photo) => photo.img === imageUrl);
   }
 
   return (
@@ -560,9 +569,11 @@ export default function App() {
                   <CardContent className="p-0">
                     <div className="relative">
                       <img src={photo.img} alt={photo.name} className="h-80 w-full object-cover transition duration-500 group-hover:scale-105" />
-                      <button onClick={() => removePhoto(index)} className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full bg-black/50 text-white backdrop-blur transition hover:bg-red-500/80" aria-label={`Remove ${photo.name}`}>
-                        <Icon name="trash" className="h-4 w-4" />
-                      </button>
+                      {isLocalArchivePhoto(photo.img) && (
+                        <button onClick={() => removePhotoByUrl(photo.img)} className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full bg-black/50 text-white backdrop-blur transition hover:bg-red-500/80" aria-label={`Remove observation`}>
+                          <Icon name="trash" className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
                     <div className="p-6">
                       <h3 className="text-2xl font-medium text-white">{photo.name}</h3>
