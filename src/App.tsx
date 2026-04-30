@@ -20,9 +20,17 @@ type ObservationForm = {
   date: string;
   time: string;
   place: string;
+  isPublic: boolean;
 };
 
-type Photo = ObservationForm & { img: string };
+type Photo = {
+  name: string;
+  date: string;
+  time: string;
+  place: string;
+  img: string;
+  isPublic?: boolean;
+};
 
 function Icon({ name, className = "h-6 w-6" }: { name: string; className?: string }) {
   const common = {
@@ -230,6 +238,7 @@ const samplePhotos: Photo[] = [
     time: "1 min",
     place: "114°E, 22°N",
     img: "https://images.unsplash.com/photo-1543722530-d2c3201371e7?auto=format&fit=crop&w=900&q=80",
+    isPublic: true,
   },
   {
     name: "NGC 2903 — Spiral Galaxy",
@@ -237,6 +246,7 @@ const samplePhotos: Photo[] = [
     time: "10 min",
     place: "114°E, 22°N",
     img: "https://images.unsplash.com/photo-1462331940025-496dfbfc7564?auto=format&fit=crop&w=900&q=80",
+    isPublic: true,
   },
   {
     name: "Urban Star Field",
@@ -244,6 +254,7 @@ const samplePhotos: Photo[] = [
     time: "8 min",
     place: "City sky",
     img: "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?auto=format&fit=crop&w=900&q=80",
+    isPublic: true,
   },
 ];
 
@@ -254,6 +265,7 @@ function normalizeObservation(form: ObservationForm, preview: string, fallbackDa
     time: form.time.trim() || "Not specified",
     place: form.place.trim() || "Not specified",
     img: preview,
+    isPublic: form.isPublic,
   };
 }
 
@@ -265,10 +277,25 @@ function getYoutubeThumbnail(videoId: string) {
   return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
 }
 
+const LOCAL_ARCHIVE_KEY = "sky-observation-personal-archive";
+
+function readLocalArchive(): Photo[] {
+  try {
+    const raw = window.localStorage.getItem(LOCAL_ARCHIVE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalArchive(photos: Photo[]) {
+  window.localStorage.setItem(LOCAL_ARCHIVE_KEY, JSON.stringify(photos));
+}
+
 export default function App() {
   const [cloudImages, setCloudImages] = useState<string[]>([]);
   const [photos, setPhotos] = useState<Photo[]>(samplePhotos);
-  const [form, setForm] = useState<ObservationForm>({ name: "", date: "", time: "", place: "" });
+  const [form, setForm] = useState<ObservationForm>({ name: "", date: "", time: "", place: "", isPublic: false });
   const [preview, setPreview] = useState("");
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -277,27 +304,26 @@ export default function App() {
   const canSave = canSaveObservation(form, preview);
 
   async function loadImages() {
-    const { data, error } = await supabase.storage
-      .from(BUCKET_NAME)
-      .list("", {
-        limit: 100,
-        offset: 0,
-        sortBy: { column: "created_at", order: "desc" },
-      });
+    const { data, error } = await supabase
+      .from("observations")
+      .select("image_url")
+      .eq("is_public", true)
+      .order("created_at", { ascending: false });
 
     if (error) {
-      console.error("Load images error:", error);
+      console.error("Load public observations error:", error);
       return;
     }
 
     const urls = (data || [])
-      .filter((file) => file.name && !file.name.startsWith("."))
-      .map((file) => supabase.storage.from(BUCKET_NAME).getPublicUrl(file.name).data.publicUrl);
+      .map((row) => row.image_url)
+      .filter(Boolean);
 
     setCloudImages(urls);
   }
 
   useEffect(() => {
+    setPhotos([...readLocalArchive(), ...samplePhotos]);
     loadImages();
   }, []);
 
@@ -327,12 +353,38 @@ export default function App() {
     }
   }
 
-  function addPhoto(event: React.FormEvent) {
+  async function addPhoto(event: React.FormEvent) {
     event.preventDefault();
     if (!canSave) return;
 
-    setPhotos([normalizeObservation(form, preview, today), ...photos]);
-    setForm({ name: "", date: "", time: "", place: "" });
+    const savedPhoto = normalizeObservation(form, preview, today);
+
+    const { error } = await supabase.from("observations").insert([
+      {
+        name: savedPhoto.name,
+        date: savedPhoto.date,
+        time: savedPhoto.time,
+        location: savedPhoto.place,
+        image_url: savedPhoto.img,
+        is_public: Boolean(savedPhoto.isPublic),
+      },
+    ]);
+
+    if (error) {
+      console.error("Save observation error:", error);
+      alert("Image uploaded, but observation details were not saved. Please check observations table RLS policies.");
+      return;
+    }
+
+    const nextLocalArchive = [savedPhoto, ...readLocalArchive()];
+    writeLocalArchive(nextLocalArchive);
+    setPhotos([savedPhoto, ...photos]);
+
+    if (savedPhoto.isPublic) {
+      await loadImages();
+    }
+
+    setForm({ name: "", date: "", time: "", place: "", isPublic: false });
     setPreview("");
   }
 
@@ -473,6 +525,18 @@ export default function App() {
                   <input className="rounded-2xl border border-white/20 bg-black/35 px-4 py-3 text-white placeholder:text-slate-200 outline-none focus:border-blue-200" placeholder="Exposure / stack time" value={form.time} onChange={(event) => setForm({ ...form, time: event.target.value })} />
                   <input className="rounded-2xl border border-white/20 bg-black/35 px-4 py-3 text-white placeholder:text-slate-200 outline-none focus:border-blue-200" placeholder="Location" value={form.place} onChange={(event) => setForm({ ...form, place: event.target.value })} />
                 </div>
+                <label className="flex items-start gap-3 rounded-2xl border border-white/15 bg-black/25 px-4 py-3 text-sm leading-6 text-slate-100">
+                  <input
+                    type="checkbox"
+                    checked={form.isPublic}
+                    onChange={(event) => setForm({ ...form, isPublic: event.target.checked })}
+                    className="mt-1 h-4 w-4"
+                  />
+                  <span>
+                    Show this observation publicly
+                    <span className="block text-xs text-slate-300">If unchecked, it stays in your personal archive on this browser and will not appear in the public gallery.</span>
+                  </span>
+                </label>
                 <p className="text-sm leading-6 text-slate-100">Required: image and target name. Optional: date, location, and exposure time. If no date is selected, today will be used automatically.</p>
                 <Button type="submit" disabled={!canSave} className="rounded-2xl bg-blue-500 py-6 text-base text-white hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-50">Save observation</Button>
               </form>
@@ -515,8 +579,8 @@ export default function App() {
           </div>
 
           <div className="mt-14">
-            <h3 className="mb-3 text-3xl font-light text-white">Uploaded Cloud Photos</h3>
-            <p className="mb-6 text-sm leading-6 text-slate-100">These images are loaded from your Supabase Storage bucket. They stay visible after refresh and can be seen by anyone if your bucket is public.</p>
+            <h3 className="mb-3 text-3xl font-light text-white">Public Observation Gallery</h3>
+            <p className="mb-6 text-sm leading-6 text-slate-100">These observations are loaded from the Supabase observations table where is_public is true. They stay visible after refresh and can be seen by anyone.</p>
 
             {cloudImages.length === 0 ? (
               <Card className="rounded-[2rem] border-white/10 bg-white/[0.08] backdrop-blur-xl">
